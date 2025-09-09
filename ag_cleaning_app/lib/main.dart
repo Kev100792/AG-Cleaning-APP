@@ -27,7 +27,7 @@ class MyApp extends StatelessWidget {
       title: 'AG Cleaning – CRM',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light,
-      routerConfig: AppRouter.router,
+      routerConfig: appRouter,
     );
   }
 }
