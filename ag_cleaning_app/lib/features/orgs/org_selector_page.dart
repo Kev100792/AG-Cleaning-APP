@@ -1,100 +1,63 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'org_state.dart';
 import 'package:go_router/go_router.dart';
+import '../../router/app_router.dart';
+import 'org_state.dart';
 
-class OrgSelectorPage extends ConsumerStatefulWidget {
+class OrgSelectorPage extends ConsumerWidget {
   const OrgSelectorPage({super.key});
-  @override
-  ConsumerState<OrgSelectorPage> createState() => _OrgSelectorPageState();
-}
-
-class _OrgSelectorPageState extends ConsumerState<OrgSelectorPage> {
-  final nameCtrl = TextEditingController();
-  bool creating = false;
 
   @override
-  Widget build(BuildContext context) {
-    final orgs = ref.watch(orgMembershipsProvider).value ?? [];
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Si une org est déjà active => on envoie au dashboard
     final current = ref.watch(currentOrgIdProvider);
+    if (current != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (context.mounted) context.go(Routes.dashboard);
+      });
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+
+    final memberships = ref.watch(orgMembershipsProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Sélection d’organisation')),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: ListView(
-          children: [
-            if (orgs.isNotEmpty) ...[
-              Text(
-                'Vos organisations',
-                style: Theme.of(context).textTheme.titleLarge,
-              ),
-              const SizedBox(height: 8),
-              ...orgs.map((m) {
-                final orgId = m['org_id'] as String;
-                final name = (m['orgs'] as Map)['name'] as String;
-                final role = m['role'] as String;
-                final selected = current == orgId;
-                return ListTile(
-                  leading: CircleAvatar(
-                    child: Text(name.isNotEmpty ? name[0] : '?'),
-                  ),
-                  title: Text(name),
-                  subtitle: Text('Rôle: $role'),
-                  trailing: selected
-                      ? const Icon(Icons.check, color: Colors.green)
-                      : null,
-                  onTap: () {
-                    ref.read(currentOrgIdProvider.notifier).state = orgId;
-                    Navigator.of(context).maybePop();
-                  },
-                );
-              }),
-              const Divider(height: 32),
-            ],
-            Text(
-              'Créer une organisation',
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: nameCtrl,
-              decoration: const InputDecoration(
-                labelText: 'Nom de l’organisation (rapide)',
-              ),
-            ),
-            const SizedBox(height: 8),
-            FilledButton.icon(
-              icon: const Icon(Icons.add_business),
-              label: Text(creating ? '...' : 'Créer et utiliser'),
-              onPressed: creating
-                  ? null
-                  : () async {
-                      if (nameCtrl.text.trim().isEmpty) return;
-                      final nav = Navigator.of(
-                        context,
-                      ); // <-- capture AVANT await
-                      setState(() => creating = true);
-                      try {
-                        final id = await createOrganization(
-                          nameCtrl.text.trim(),
-                        );
-                        ref.invalidate(orgMembershipsProvider);
-                        ref.read(currentOrgIdProvider.notifier).state = id;
-                        nav.maybePop();
-                      } finally {
-                        if (mounted) setState(() => creating = false);
-                      }
-                    },
-            ),
-            const SizedBox(height: 12),
-            OutlinedButton.icon(
-              onPressed: () => GoRouter.of(context).push('/orgs/create'),
-              icon: const Icon(Icons.settings_suggest),
-              label: const Text('Création détaillée…'),
-            ),
-          ],
-        ),
+      appBar: AppBar(title: const Text('Sélectionner une organisation')),
+      body: memberships.when(
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (e, _) => Center(child: Text('Erreur: $e')),
+        data: (rows) {
+          if (rows.isEmpty) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (context.mounted) context.go(Routes.createOrg);
+            });
+            return const Center(child: CircularProgressIndicator());
+          }
+          return ListView.separated(
+            padding: const EdgeInsets.all(16),
+            itemBuilder: (_, i) {
+              final r = rows[i];
+              final org = r['orgs'] as Map<String, dynamic>? ?? {};
+              return ListTile(
+                leading: const Icon(Icons.apartment_outlined),
+                title: Text(org['name']?.toString() ?? 'Organisation'),
+                subtitle: Text('Rôle: ${r['role'] ?? 'MEMBER'}'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () {
+                  ref.read(currentOrgIdProvider.notifier).state =
+                      r['org_id'] as String;
+                  context.go(Routes.dashboard);
+                },
+              );
+            },
+            separatorBuilder: (_, __) => const Divider(height: 1),
+            itemCount: rows.length,
+          );
+        },
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => context.go(Routes.createOrg),
+        icon: const Icon(Icons.add),
+        label: const Text('Créer une organisation'),
       ),
     );
   }

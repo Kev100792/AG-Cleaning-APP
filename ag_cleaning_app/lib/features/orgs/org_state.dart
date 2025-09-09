@@ -44,34 +44,41 @@ final orgMembershipsProvider = FutureProvider<List<Map<String, dynamic>>>((
       .isFilter('deleted_at', null)
       .order('created_at');
 
+  // 1) memberships (déjà fait au-dessus)
   final memberships = (mRows as List).cast<Map<String, dynamic>>();
   if (memberships.isEmpty) return [];
 
-  // IDs uniques et non nuls
+  // 2) IDs uniques et non nuls
   final ids = {
     for (final m in memberships) (m['org_id'] as String?),
   }.whereType<String>().toList();
 
   if (ids.isEmpty) return [];
 
-  // OR compact: id.eq.<uuid1>,id.eq.<uuid2>,...
-  final orCond = ids.map((id) => 'id.eq.$id').join(',');
+  // 3) Récupère les orgs (compat v2.9.0)
+  // - si 1 id -> eq()
+  // - si >1 id -> or('id.eq....,id.eq....')
+  List<Map<String, dynamic>> orgRows;
+  if (ids.length == 1) {
+    final rows = await supa.from('orgs').select('id,name').eq('id', ids.first);
+    orgRows = (rows as List).cast<Map<String, dynamic>>();
+  } else {
+    final orCond = ids.map((id) => 'id.eq.$id').join(',');
+    final rows = await supa.from('orgs').select('id,name').or(orCond);
+    orgRows = (rows as List).cast<Map<String, dynamic>>();
+  }
 
-  final oRows = await supa
-      .from('orgs')
-      .select('id,name') // d'abord select()
-      .or(orCond); // puis le filtre OR
-
+  // 4) Map id -> org
   final orgs = <String, Map<String, dynamic>>{
-    for (final o in (oRows as List).cast<Map<String, dynamic>>())
-      o['id'] as String: o,
+    for (final o in orgRows) o['id'] as String: o,
   };
 
-  // 3) on reforme une shape homogène
+  // 5) shape homogène pour l’UI (et fallback si org non trouvée)
   return memberships.map<Map<String, dynamic>>((m) {
-    final o = orgs[m['org_id']] ?? {'id': m['org_id'], 'name': 'Organisation'};
+    final oid = m['org_id'] as String;
+    final o = orgs[oid] ?? {'id': oid, 'name': 'Organisation'};
     return {
-      'org_id': m['org_id'],
+      'org_id': oid,
       'role': m['role'],
       'orgs': {'id': o['id'], 'name': o['name']},
     };
